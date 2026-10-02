@@ -875,9 +875,17 @@ func TestGetDependencies(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Len(t, newDeps2, 2)
-	emptyDeps, err := store.GetDependencies(context.Background(), depstore.QueryParameters{
+	// bounds that exactly match the trace start and end are inclusive
+	boundaryDeps, err := store.GetDependencies(context.Background(), depstore.QueryParameters{
 		StartTime: span1StartTime.Add(-4 * time.Second),
 		EndTime:   span1StartTime.Add(5 * time.Second),
+	})
+	require.NoError(t, err)
+	assert.Len(t, boundaryDeps, 2)
+	// a window strictly inside the trace does not contain it
+	emptyDeps, err := store.GetDependencies(context.Background(), depstore.QueryParameters{
+		StartTime: span1StartTime.Add(-3 * time.Second),
+		EndTime:   span1StartTime.Add(4 * time.Second),
 	})
 	require.NoError(t, err)
 	assert.Empty(t, emptyDeps)
