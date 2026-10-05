@@ -318,3 +318,48 @@ func TestSpanHash_ErrorInMarshaler(t *testing.T) {
 	assert.Contains(t, warnings[0], "failed to compute hash code")
 	assert.Contains(t, warnings[0], assert.AnError.Error())
 }
+
+func TestSpanHash_DuplicateSpansDifferentScopeAndSchemaIdentity(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(rs1, rs2 ptrace.ResourceSpans, ss1, ss2 ptrace.ScopeSpans)
+	}{
+		{"scope name", func(_, _ ptrace.ResourceSpans, ss1, ss2 ptrace.ScopeSpans) {
+			ss1.Scope().SetName("scope-a")
+			ss2.Scope().SetName("scope-b")
+		}},
+		{"scope version", func(_, _ ptrace.ResourceSpans, ss1, ss2 ptrace.ScopeSpans) {
+			ss1.Scope().SetVersion("1.0")
+			ss2.Scope().SetVersion("2.0")
+		}},
+		{"scope schema url", func(_, _ ptrace.ResourceSpans, ss1, ss2 ptrace.ScopeSpans) {
+			ss1.SetSchemaUrl("http://schema/1")
+			ss2.SetSchemaUrl("http://schema/2")
+		}},
+		{"resource schema url", func(rs1, rs2 ptrace.ResourceSpans, _, _ ptrace.ScopeSpans) {
+			rs1.SetSchemaUrl("http://schema/1")
+			rs2.SetSchemaUrl("http://schema/2")
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			traces := ptrace.NewTraces()
+			rs1 := traces.ResourceSpans().AppendEmpty()
+			rs2 := traces.ResourceSpans().AppendEmpty()
+			ss1 := rs1.ScopeSpans().AppendEmpty()
+			ss2 := rs2.ScopeSpans().AppendEmpty()
+			for _, ss := range []ptrace.ScopeSpans{ss1, ss2} {
+				span := ss.Spans().AppendEmpty()
+				span.SetName("span1")
+				span.SetTraceID([16]byte{1})
+				span.SetSpanID([8]byte{1})
+			}
+			tt.setup(rs1, rs2, ss1, ss2)
+
+			DeduplicateSpans().Adjust(traces)
+
+			assert.Equal(t, 1, ss1.Spans().Len())
+			assert.Equal(t, 1, ss2.Spans().Len())
+		})
+	}
+}
