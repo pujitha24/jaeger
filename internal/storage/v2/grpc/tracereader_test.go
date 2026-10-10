@@ -632,6 +632,7 @@ func TestConvertMapToKeyValueList(t *testing.T) {
 		name       string
 		attributes pcommon.Map
 		expected   []*storage.KeyValue
+		wantErr    string
 	}{
 		{
 			name:       "empty map",
@@ -645,12 +646,7 @@ func TestConvertMapToKeyValueList(t *testing.T) {
 				m.PutEmpty("key1")
 				return m
 			}(),
-			expected: []*storage.KeyValue{
-				{
-					Key:   "key1",
-					Value: nil,
-				},
-			},
+			wantErr: `cannot send attribute "key1": values of type Empty are not supported in queries`,
 		},
 		{
 			name: "primitive types",
@@ -775,7 +771,12 @@ func TestConvertMapToKeyValueList(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := convertMapToKeyValueList(test.attributes)
+			result, err := convertMapToKeyValueList(test.attributes)
+			if test.wantErr != "" {
+				require.EqualError(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
 			require.Equal(t, test.expected, result)
 		})
 	}
@@ -1066,6 +1067,14 @@ func TestTraceReader_RefusesUnencodableFilter(t *testing.T) {
 			assert.ErrorContains(t, err, "cannot send the query filter")
 		})
 	}
+}
+
+func TestToProtoQueryParameters_EmptyAttributeIsRefused(t *testing.T) {
+	attrs := pcommon.NewMap()
+	attrs.PutStr("ok", "v")
+	attrs.PutEmpty("empty_attr")
+	_, err := toProtoQueryParameters(tracestore.TraceQueryParams{Attributes: attrs})
+	require.ErrorContains(t, err, `cannot send attribute "empty_attr"`)
 }
 
 func TestToProtoQueryParameters_SearchDepth(t *testing.T) {

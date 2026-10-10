@@ -334,10 +334,14 @@ func toProtoQueryParameters(t tracestore.TraceQueryParams) (*storage.TraceQueryP
 	if t.SearchDepth > tracestore.MaxSearchDepth {
 		return nil, fmt.Errorf("SearchDepth must be in [0, %d]", tracestore.MaxSearchDepth)
 	}
+	attrs, err := convertMapToKeyValueList(t.Attributes)
+	if err != nil {
+		return nil, err
+	}
 	q := &storage.TraceQueryParameters{
 		ServiceName:   t.ServiceName,
 		OperationName: t.OperationName,
-		Attributes:    convertMapToKeyValueList(t.Attributes),
+		Attributes:    attrs,
 		StartTimeMin:  t.StartTimeMin,
 		StartTimeMax:  t.StartTimeMax,
 		DurationMin:   t.DurationMin,
@@ -354,16 +358,25 @@ func toProtoQueryParameters(t tracestore.TraceQueryParams) (*storage.TraceQueryP
 	return q, nil
 }
 
-func convertMapToKeyValueList(m pcommon.Map) []*storage.KeyValue {
+// convertMapToKeyValueList refuses an attribute whose value has no wire form (such as an empty
+// value) rather than omitting it: the server drops a nil value, so sending it would run the
+// search as if the attribute had never been requested.
+func convertMapToKeyValueList(m pcommon.Map) ([]*storage.KeyValue, error) {
 	keyValues := make([]*storage.KeyValue, 0, m.Len())
+	var err error
 	m.Range(func(k string, v pcommon.Value) bool {
-		keyValues = append(keyValues, &storage.KeyValue{
-			Key:   k,
-			Value: convertValueToAnyValue(v),
-		})
+		av := convertValueToAnyValue(v)
+		if av == nil {
+			err = fmt.Errorf("cannot send attribute %q: values of type %s are not supported in queries", k, v.Type())
+			return false
+		}
+		keyValues = append(keyValues, &storage.KeyValue{Key: k, Value: av})
 		return true
 	})
-	return keyValues
+	if err != nil {
+		return nil, err
+	}
+	return keyValues, nil
 }
 
 func convertValueToAnyValue(v pcommon.Value) *storage.AnyValue {
