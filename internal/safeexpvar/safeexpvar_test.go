@@ -5,6 +5,7 @@ package safeexpvar
 
 import (
 	"expvar"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,23 @@ func TestSetInt(t *testing.T) {
 	expInt, ok := v.(*expvar.Int)
 	require.True(t, ok, "expected variable %s to be of type *expvar.Int", name)
 	assert.Equal(t, value, expInt.Value())
+}
+
+func TestSetIntConcurrent(t *testing.T) {
+	name := "metrics-test-concurrent"
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range 32 {
+		wg.Go(func() {
+			<-start
+			SetInt(name, int64(i))
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	_, ok := expvar.Get(name).(*expvar.Int)
+	require.True(t, ok)
 }
 
 func TestMain(m *testing.M) {
