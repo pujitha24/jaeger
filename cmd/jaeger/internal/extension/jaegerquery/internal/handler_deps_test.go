@@ -344,3 +344,15 @@ func TestGetDependenciesLookbackParsingFailure(t *testing.T) {
 	err := getJSON(ts.server.URL+"/api/dependencies?endTs=1476374248550&service=testing&lookback=shazbot", &response)
 	require.Error(t, err)
 }
+
+func TestGetDependenciesNonPositiveLookback(t *testing.T) {
+	ts := initializeTestServer(t)
+	for _, lookback := range []string{"0", "-3600000"} {
+		t.Run(lookback, func(t *testing.T) {
+			var response structuredResponse
+			err := getJSON(ts.server.URL+"/api/dependencies?endTs=1476374248550&service=testing&lookback="+lookback, &response)
+			require.ErrorContains(t, err, "400")
+			require.ErrorContains(t, err, "must be greater than zero")
+		})
+	}
+}
