@@ -5,8 +5,10 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"iter"
+	"math"
 	"strings"
 	"testing"
 
@@ -18,6 +20,7 @@ import (
 
 	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegerquery/internal/mcptools/internal/types"
 	"github.com/jaegertracing/jaeger/cmd/jaeger/internal/extension/jaegerquery/querysvc"
+	"github.com/jaegertracing/jaeger/internal/jptrace"
 )
 
 // Helper types and functions are defined in test_helpers.go
@@ -496,6 +499,30 @@ func TestConvertAttributeValue(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestBuildSpanDetail_NonFiniteDoubles(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.Attributes().PutDouble("nan", math.NaN())
+	span.Attributes().PutDouble("finite", 1.5)
+	list := span.Attributes().PutEmptySlice("list")
+	list.AppendEmpty().SetDouble(math.Inf(1))
+	span.Events().AppendEmpty().Attributes().PutDouble("neg_inf", math.Inf(-1))
+	span.Links().AppendEmpty().Attributes().PutDouble("nan", math.NaN())
+
+	detail := buildSpanDetail(jptrace.SpanIterPos{Resource: rs}, span)
+
+	// The MCP SDK json.Marshals tool output; non-finite floats used to make that fail.
+	out, err := json.Marshal(detail)
+	require.NoError(t, err)
+	assert.Equal(t, "NaN", detail.Attributes["nan"])
+	assert.InDelta(t, 1.5, detail.Attributes["finite"], 0)
+	assert.Equal(t, []any{"Infinity"}, detail.Attributes["list"])
+	assert.Equal(t, "-Infinity", detail.Events[0].Attributes["neg_inf"])
+	assert.Equal(t, "NaN", detail.Links[0].Attributes["nan"])
+	assert.Contains(t, string(out), `"neg_inf":"-Infinity"`)
 }
 
 func TestGetSpanDetailsHandler_ExceedsLimit(t *testing.T) {
