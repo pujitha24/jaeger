@@ -455,7 +455,7 @@ func TestMetricStorageStartError(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "failed to initialize metrics storage 'foo'",
+			expectedError: "Addresses: non zero value required",
 		},
 	}
 
@@ -545,12 +545,12 @@ func TestClickHouse(t *testing.T) {
 	ext := makeStorageExtension(t, storageconfig.Config{
 		TraceBackends: map[string]storageconfig.TraceBackend{
 			"foo": {
-				ClickHouse: &clickhouse.Configuration{
-					Protocol: "http",
-					Addresses: []string{
-						testServer.Listener.Addr().String(),
-					},
-				},
+				ClickHouse: func() *clickhouse.Configuration {
+					cfg := clickhouse.DefaultConfiguration()
+					cfg.Protocol = "http"
+					cfg.Addresses = []string{testServer.Listener.Addr().String()}
+					return &cfg
+				}(),
 			},
 		},
 	})

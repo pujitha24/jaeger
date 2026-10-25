@@ -491,3 +491,18 @@ func TestMetricBackendExclusive(t *testing.T) {
 		}
 	}
 }
+
+func TestBackendValidateClickHouse(t *testing.T) {
+	valid := clickhouse.DefaultConfiguration()
+	valid.Addresses = []string{"localhost:9000"}
+	invalid := valid
+	invalid.Addresses = nil
+
+	require.NoError(t, (&TraceBackend{ClickHouse: &valid}).Validate())
+	require.NoError(t, (&MetricBackend{ClickHouse: &valid}).Validate())
+
+	err := (&TraceBackend{ClickHouse: &invalid}).Validate()
+	require.ErrorContains(t, err, "clickhouse: Addresses: non zero value required")
+	err = (&MetricBackend{ClickHouse: &invalid}).Validate()
+	require.ErrorContains(t, err, "clickhouse: Addresses: non zero value required")
+}

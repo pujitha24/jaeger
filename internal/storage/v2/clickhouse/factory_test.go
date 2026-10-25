@@ -43,7 +43,9 @@ func TestFactory(t *testing.T) {
 			defer srv.Close()
 
 			cfg := Configuration{
-				Protocol: "http",
+				DefaultSearchDepth: 10,
+				MaxSearchDepth:     10,
+				Protocol:           "http",
 				Addresses: []string{
 					srv.Listener.Addr().String(),
 				},
@@ -210,7 +212,9 @@ func TestNewFactory_Errors(t *testing.T) {
 			defer srv.Close()
 
 			cfg := Configuration{
-				Protocol: "http",
+				DefaultSearchDepth: 10,
+				MaxSearchDepth:     10,
+				Protocol:           "http",
 				Addresses: []string{
 					srv.Listener.Addr().String(),
 				},
@@ -282,7 +286,9 @@ func TestPurge(t *testing.T) {
 			defer srv.Close()
 
 			cfg := Configuration{
-				Protocol: "http",
+				DefaultSearchDepth: 10,
+				MaxSearchDepth:     10,
+				Protocol:           "http",
 				Addresses: []string{
 					srv.Listener.Addr().String(),
 				},
@@ -336,8 +342,10 @@ func TestGetProtocol(t *testing.T) {
 
 func TestNewFactory_TLSLoadError(t *testing.T) {
 	cfg := Configuration{
-		Protocol:  "native",
-		Addresses: []string{"localhost:9440"},
+		DefaultSearchDepth: 10,
+		MaxSearchDepth:     10,
+		Protocol:           "native",
+		Addresses:          []string{"localhost:9440"},
 		TLS: configoptional.Some(configtls.ClientConfig{
 			Config: configtls.Config{
 				CAFile: "/nonexistent/ca.pem",
@@ -353,8 +361,10 @@ func TestNewFactory_TLSLoadSuccess(t *testing.T) {
 	srv := clickhousetest.NewServer(clickhousetest.FailureConfig{})
 	defer srv.Close()
 	cfg := Configuration{
-		Protocol:  "native",
-		Addresses: []string{srv.Listener.Addr().String()},
+		DefaultSearchDepth: 10,
+		MaxSearchDepth:     10,
+		Protocol:           "native",
+		Addresses:          []string{srv.Listener.Addr().String()},
 		TLS: configoptional.Some(configtls.ClientConfig{
 			InsecureSkipVerify: true,
 		}),
@@ -402,7 +412,13 @@ func TestNewSchemaBuilder_Errors(t *testing.T) {
 			loadTemplate = tt.mockFn
 			_, err := NewFactory(
 				context.Background(),
-				Configuration{CreateSchema: true, TableEngine: localTableEngine},
+				Configuration{
+					Addresses:          []string{"localhost:9000"},
+					DefaultSearchDepth: 10,
+					MaxSearchDepth:     10,
+					CreateSchema:       true,
+					TableEngine:        localTableEngine,
+				},
 				telemetry.NoopSettings(),
 			)
 			require.ErrorContains(t, err, tt.expectedError)
@@ -568,4 +584,32 @@ func TestNewFactory_KeepsExplicitZeroCacheSettings(t *testing.T) {
 
 	assert.Zero(t, f.config.AttributeMetadataCacheTTL)
 	assert.Zero(t, f.config.AttributeMetadataCacheMaxSize)
+}
+
+func TestNewFactory_InvalidConfig(t *testing.T) {
+	valid := Configuration{
+		Addresses:          []string{"localhost:9000"},
+		DefaultSearchDepth: 10,
+		MaxSearchDepth:     10,
+	}
+	tests := []struct {
+		name     string
+		mutate   func(*Configuration)
+		expected string
+	}{
+		{"missing addresses", func(c *Configuration) { c.Addresses = nil }, "Addresses: non zero value required"},
+		{"negative dial timeout", func(c *Configuration) { c.DialTimeout = -time.Second }, "dial_timeout must be a non-negative duration"},
+		{"zero default search depth", func(c *Configuration) { c.DefaultSearchDepth = 0 }, "default_search_depth must be a positive number"},
+		{"default exceeds max search depth", func(c *Configuration) { c.DefaultSearchDepth = 20 }, "default_search_depth cannot exceed max_search_depth"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := valid
+			tt.mutate(&cfg)
+			f, err := NewFactory(context.Background(), cfg, telemetry.NoopSettings())
+			require.ErrorContains(t, err, "invalid clickhouse configuration")
+			require.ErrorContains(t, err, tt.expected)
+			require.Nil(t, f)
+		})
+	}
 }
