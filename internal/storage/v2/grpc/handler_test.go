@@ -419,6 +419,33 @@ func TestHandler_FindTraceIDs(t *testing.T) {
 	}
 }
 
+// TestHandler_MissingQueryIsInvalidArgument pins that a search request that omits the nested
+// query is refused with InvalidArgument before the reader is consulted, rather than panicking.
+func TestHandler_MissingQueryIsInvalidArgument(t *testing.T) {
+	assertMissingQuery := func(t *testing.T, err error) {
+		t.Helper()
+		st := status.Convert(err)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+		assert.Equal(t, "missing query", st.Message())
+	}
+	// The mock has no expectations, so any call into the reader fails the test.
+	newHandler := func() *Handler {
+		return NewHandler(new(tracestoremocks.Reader), new(tracestoremocks.Writer), new(depstoremocks.Reader))
+	}
+	t.Run("FindTraces", func(t *testing.T) {
+		err := newHandler().FindTraces(&storage.FindTracesRequest{}, &testStream{})
+		assertMissingQuery(t, err)
+	})
+	t.Run("FindTraceIDs", func(t *testing.T) {
+		_, err := newHandler().FindTraceIDs(context.Background(), &storage.FindTraceIDsRequest{})
+		assertMissingQuery(t, err)
+	})
+	t.Run("FindTraceSummaries", func(t *testing.T) {
+		err := newHandler().FindTraceSummaries(&storage.FindTraceSummariesRequest{}, &summaryStream{})
+		assertMissingQuery(t, err)
+	})
+}
+
 // TestHandler_PaginationInvalidBecomesInvalidArgument pins the wire mapping of a rejected page
 // token (RFC 0014 §6): the reader's ErrPaginationInvalid leaves the server as InvalidArgument
 // carrying the pagination reason, so a remote client can tell a bad token from any other
